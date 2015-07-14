@@ -13,5 +13,9 @@ INCLUDEPATH += $$LIBTCOD_PATH/headers/
 
 LIBS +=  -L"$$LIBTCOD_PATH" -ltcod -ltcodxx
 
-SOURCES += main.cpp
+SOURCES += main.cpp \
+    ColorScheme.cpp
+
+HEADERS += \
+    ColorScheme.hpp
 
