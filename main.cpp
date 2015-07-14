@@ -2,6 +2,7 @@
 
 #include <vector>
 #include <iostream>
+#include <cmath>
 
 #include "ColorScheme.hpp"
 
@@ -11,8 +12,10 @@ const int xAreaSize = 300;
 const int yAreaSize = 300;
 
 const float acceleration = 3;
-const float accelerationPerPixel = 0.025;
+const float accelerationPerPixel = 0.0025;
 const int fps = 30;
+
+const size_t particleCount = 1000;
 
 template < typename T>
 class Point {
@@ -72,36 +75,51 @@ public:
         if(gravitation) {
             Point< float > distance = destination - coordinate;
 
-            velocity.x() = acceleration * elapsedTime;
-            velocity.y() = acceleration * elapsedTime;
+            velocity.x() += accelerationPerPixel *  (xAreaSize - distance.x()) * (distance.x() > 0 ? 1 : -1) * elapsedTime;
+            velocity.y() += accelerationPerPixel *  (yAreaSize - distance.y()) * (distance.y() > 0 ? 1 : -1) * elapsedTime;
 
-            if(distance.x() > 0) {
-                coordinate.x() += velocity.x();
-            } else {
-                    coordinate.x() -= velocity.x();
-            }
+            coordinate.x() += velocity.x();
+            coordinate.y() += velocity.y();
 
-            if(distance.y() > 0) {
-                coordinate.y() += velocity.y();
-            } else {
-                    coordinate.y() -= velocity.y();
-            }
+//            if(distance.x() < 0) {
+//                coordinate.x() += velocity.x();
+//            } else {
+//                coordinate.x() -= velocity.x();
+//            }
+
+//            if(distance.y() < 0) {
+//                coordinate.y() += velocity.y();
+//            } else {
+//                coordinate.y() -= velocity.y();
+//            }
 
         } else {
-            Deceleration();
+            velocity.x() *= 0.99;
+            velocity.y() *= 0.99;
+
+            coordinate.x() += velocity.x();
+            coordinate.y() += velocity.y();
         }
 
         Reflection();
-
-        RecalcPosition();
 
         gravitation = false;
     }
 
 //private:
-    void Deceleration() {}
-    void Reflection() {}
-    void RecalcPosition() {}
+    void Deceleration() {
+
+    }
+
+    void Reflection() {
+        if(coordinate.x() < 0 || coordinate.x() > xAreaSize) {
+            velocity.x() = -velocity.x();
+        }
+
+        if(coordinate.y() < 0 || coordinate.y() > xAreaSize) {
+            velocity.y() = -velocity.y();
+        }
+    }
 
     Point< float > coordinate;
     Point< float > velocity;
@@ -141,28 +159,39 @@ private:
 int main()
 {
     TCODConsole::initRoot(xAreaSize, yAreaSize, "Particles Gravity");
-    ColorSchemeI *scheme = ColorSchemeFactory::getScheme("soft");
+    ColorSchemeI *scheme = ColorSchemeFactory::getScheme("cold");
 
     TCOD_key_t key;
     TCOD_mouse_t mouse;
 
-    float vel = accelerationPerPixel;
-    float elapsedTime = 0;
-
-    ParticleEnsemble pe(10000);
+    ParticleEnsemble pe(particleCount);
 
     while(!TCODConsole::isWindowClosed()) {
         TCODSystem::checkForEvent(TCOD_EVENT_ANY, &key, &mouse);
         if(mouse.lbutton) {
-            pe.SetDestinationPoint(Point<float>::MakePoint(mouse.x, mouse.y));
+            cout << mouse.cx << " " << mouse.cy << " : " << pe[0].coordinate.x() << " " << pe[0].coordinate.y() << endl;
+            pe.SetDestinationPoint(Point<float>::MakePoint(mouse.cx, mouse.cy));
         }
 
         pe.Update(TCODSystem::getLastFrameLength());
 
 
         TCODConsole::root->clear();
+
+
+        float minVel = 100, maxVel = 0;
         for(auto particle : pe) {
-            TCODConsole::root->putCharEx(particle.coordinate.x(), particle.coordinate.y(), ' ', TCODColor::black, TCODColor(255,255,255));
+            float vel = sqrt(pow(particle.velocity.x(),2) + pow(particle.velocity.y(),2));
+
+            if(minVel > vel) { minVel = vel; }
+            if(maxVel < vel) { maxVel = vel; }
+        }
+
+        for(auto particle : pe) {
+            color_t data(sqrt(pow(particle.velocity.x(),2) + pow(particle.velocity.y(),2)));
+            scheme->writeColor(data, minVel, maxVel);
+
+            TCODConsole::root->putCharEx(particle.coordinate.x(), particle.coordinate.y(), ' ', TCODColor::black, TCODColor(data.rgba.r,data.rgba.g,data.rgba.b));
         }
 
         TCODConsole::flush();
