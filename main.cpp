@@ -5,19 +5,22 @@
 #include <cmath>
 
 #include "ColorScheme.hpp"
+#include "rll/BMP/BMP.hpp"
 
 using namespace std;
 
-const int xAreaSize = 100;
-const int yAreaSize = 100;
+int xAreaSize = 0;
+int yAreaSize = 0;
+size_t particleCount = 0;
 
-const float acceleration = 3;
-const float accelerationPerPixel = 0.000025;
-const int fps = 30;
+const string imageFile = "Quake.bmp";
 
-const size_t particleCount = 5000;
+const float acceleration = 10;
+const float accelerationPerPixel = 0.0025;
 
-const float stopVel = 0.005;
+const float stopVel = 0.05;
+
+const float deccelerationCoeff = 0.99;
 
 TCODRandom rnd;
 
@@ -69,8 +72,8 @@ private:
 class Particle {
 public:
     Particle(const Point< float >& startPoint) : coordinate(startPoint), gravitation(false) {
-        home.x() = rnd.getFloat(0, xAreaSize);
-        home.y() = rnd.getFloat(0, yAreaSize);
+//        home.x() = rnd.getFloat(0, xAreaSize);
+//        home.y() = rnd.getFloat(0, yAreaSize);
     }
 
     void SetDestinationPoint(const Point< float >& destinationPoint) {
@@ -86,25 +89,26 @@ public:
         if(gravitation) {
             Point< float > distance = destination - coordinate;
 
-            float rad = sqrt(pow(xAreaSize - fabs(distance.x()),2) + pow(yAreaSize - fabs(distance.y()),2));
+            float rad = sqrt(pow(fabs(distance.x()),2) + pow(fabs(distance.y()),2));
+            float maxRad = sqrt(pow(xAreaSize,2) + pow(yAreaSize,2));
 
-            velocity.x() += rad * accelerationPerPixel *  fabs(distance.x()) * (distance.x() > 0 ? -1 : 1) * elapsedTime;
-            velocity.y() += rad * accelerationPerPixel *  fabs(distance.y()) * (distance.y() > 0 ? -1 : 1) * elapsedTime;
+            velocity.x() +=  (acceleration - (accelerationPerPixel*(maxRad - rad))) * ( fabs(distance.x()) / ( fabs(distance.x()) + fabs(distance.y()) ) ) * (distance.x() > 0 ? -1 : 1) * elapsedTime;
+            velocity.y() +=  (acceleration - (accelerationPerPixel*(maxRad - rad))) * ( fabs(distance.y()) / ( fabs(distance.x()) + fabs(distance.y()) ) ) * (distance.y() > 0 ? -1 : 1) * elapsedTime;
 
             coordinate.x() += velocity.x();
             coordinate.y() += velocity.y();
 
         } else {
-            if(velocity != Point<float>::MakePoint(0,0)) {
+            if(velocity != Point<float>::MakePoint(0, 0)) {
                 Point< float > distance = home - coordinate;
 
-                float rad = sqrt(pow((xAreaSize - fabs(distance.x())),2) + pow((yAreaSize - fabs(distance.y())),2));
+                float rad = sqrt(pow(fabs(distance.x()),2) + pow(fabs(distance.y()),2));
 
-                velocity.x() += rad * accelerationPerPixel *  (xAreaSize - fabs(distance.x())) * (distance.x() > 0 ? 1 : -1) * elapsedTime;
-                velocity.y() += rad * accelerationPerPixel *  (yAreaSize - fabs(distance.y())) * (distance.y() > 0 ? 1 : -1) * elapsedTime;
+                velocity.x() += ( accelerationPerPixel / (1/rad) ) * (distance.x() > 0 ? 1 : -1) * elapsedTime;
+                velocity.y() += ( accelerationPerPixel / (1/rad) ) * (distance.y() > 0 ? 1 : -1) * elapsedTime;
 
-                velocity.x() *= 0.999;
-                velocity.y() *= 0.999;
+                velocity.x() *= deccelerationCoeff;
+                velocity.y() *= deccelerationCoeff;
 
                 if(velocity.x() < stopVel && fabs(coordinate.x()-home.x()) < 1) {
                     velocity.x() = 0;
@@ -149,7 +153,6 @@ public:
     ParticleEnsemble(size_t particleCount) {
         for(size_t i= 0; i < particleCount; i++) {
             Add(GenerateParticle());
-            SetDestinationPoint(Point<float>::MakePoint(0,0));
         }
     }
 
@@ -169,13 +172,47 @@ public:
 
 private:
     Particle GenerateParticle() {
-        return Particle(Point< float >::MakePoint(rand()%xAreaSize, rand()%yAreaSize));
+        return Particle(Point< float >::MakePoint(rnd.getInt(0, xAreaSize), rnd.getInt(0, yAreaSize)/*xAreaSize/2,yAreaSize/2*/));
     }
 };
 
 int main()
 {
-    rnd.setDistribution(TCOD_DISTRIBUTION_GAUSSIAN_RANGE);
+    rnd.setDistribution(TCOD_DISTRIBUTION_LINEAR);
+
+    rll::Bitmap::QDBMPWrapper bmp(imageFile);
+
+    xAreaSize = bmp.GetWidth();
+    yAreaSize = bmp.GetHeight();
+
+    cout << "Area Size : " << xAreaSize << " " << yAreaSize << endl;
+
+    rll::Bitmap::ColorMapping mapping;
+
+    mapping.AddMapping(rll::Bitmap::RGBColor(0, 0, 0), 0);
+    mapping.AddMapping(rll::Bitmap::RGBColor(255, 255, 255), 1);
+
+    rll::Space::NumField tr =  bmp.Transform(mapping);
+
+    for(size_t y = 0; y < tr.GetYSize(); y++) {
+        for(size_t x = 0; x < tr.GetXSize(); x++) {
+            if(tr.CompareElement(x,y, 0)) {
+                particleCount++;
+            }
+        }
+    }
+    cout << "Particle Count : " << particleCount << endl;
+
+    ParticleEnsemble pe(particleCount);
+
+    size_t particleIterator = 0;
+    for(size_t y = 0; y < tr.GetYSize(); y++) {
+        for(size_t x = 0; x < tr.GetXSize(); x++) {
+            if(tr.CompareElement(x,y, 0)) {
+                pe[particleIterator++].setHome(Point<float>::MakePoint(x,y));
+            }
+        }
+    }
 
     TCODConsole::initRoot(xAreaSize, yAreaSize, "Particles Gravity");
     ColorSchemeI *scheme = ColorSchemeFactory::getScheme("cold");
@@ -184,8 +221,6 @@ int main()
     TCOD_mouse_t mouse;
 
     TCODMouse::showCursor(true);
-
-    ParticleEnsemble pe(particleCount);
 
     while(!TCODConsole::isWindowClosed()) {
         TCODSystem::checkForEvent(TCOD_EVENT_ANY, &key, &mouse);
@@ -197,9 +232,7 @@ int main()
 
         pe.Update(TCODSystem::getLastFrameLength());
 
-
         TCODConsole::root->clear();
-
 
         float minVel = 100, maxVel = 0;
         for(auto particle : pe) {
