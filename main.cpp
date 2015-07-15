@@ -8,14 +8,18 @@
 
 using namespace std;
 
-const int xAreaSize = 300;
-const int yAreaSize = 300;
+const int xAreaSize = 100;
+const int yAreaSize = 100;
 
 const float acceleration = 3;
-const float accelerationPerPixel = 0.0025;
+const float accelerationPerPixel = 0.000025;
 const int fps = 30;
 
-const size_t particleCount = 1000;
+const size_t particleCount = 5000;
+
+const float stopVel = 0.005;
+
+TCODRandom rnd;
 
 template < typename T>
 class Point {
@@ -64,41 +68,54 @@ private:
 
 class Particle {
 public:
-    Particle(const Point< float >& startPoint) : coordinate(startPoint), gravitation(false) { }
+    Particle(const Point< float >& startPoint) : coordinate(startPoint), gravitation(false) {
+        home.x() = rnd.getFloat(0, xAreaSize);
+        home.y() = rnd.getFloat(0, yAreaSize);
+    }
 
     void SetDestinationPoint(const Point< float >& destinationPoint) {
         destination = destinationPoint;
         gravitation = true;
     }
 
+    void setHome(Point<float> newHome) {
+        home = newHome;
+    }
+
     void Update(float elapsedTime) {
         if(gravitation) {
             Point< float > distance = destination - coordinate;
 
-            velocity.x() += accelerationPerPixel *  (xAreaSize - distance.x()) * (distance.x() > 0 ? 1 : -1) * elapsedTime;
-            velocity.y() += accelerationPerPixel *  (yAreaSize - distance.y()) * (distance.y() > 0 ? 1 : -1) * elapsedTime;
+            float rad = sqrt(pow(xAreaSize - fabs(distance.x()),2) + pow(yAreaSize - fabs(distance.y()),2));
+
+            velocity.x() += rad * accelerationPerPixel *  fabs(distance.x()) * (distance.x() > 0 ? -1 : 1) * elapsedTime;
+            velocity.y() += rad * accelerationPerPixel *  fabs(distance.y()) * (distance.y() > 0 ? -1 : 1) * elapsedTime;
 
             coordinate.x() += velocity.x();
             coordinate.y() += velocity.y();
-
-//            if(distance.x() < 0) {
-//                coordinate.x() += velocity.x();
-//            } else {
-//                coordinate.x() -= velocity.x();
-//            }
-
-//            if(distance.y() < 0) {
-//                coordinate.y() += velocity.y();
-//            } else {
-//                coordinate.y() -= velocity.y();
-//            }
 
         } else {
-            velocity.x() *= 0.99;
-            velocity.y() *= 0.99;
+            if(velocity != Point<float>::MakePoint(0,0)) {
+                Point< float > distance = home - coordinate;
 
-            coordinate.x() += velocity.x();
-            coordinate.y() += velocity.y();
+                float rad = sqrt(pow((xAreaSize - fabs(distance.x())),2) + pow((yAreaSize - fabs(distance.y())),2));
+
+                velocity.x() += rad * accelerationPerPixel *  (xAreaSize - fabs(distance.x())) * (distance.x() > 0 ? 1 : -1) * elapsedTime;
+                velocity.y() += rad * accelerationPerPixel *  (yAreaSize - fabs(distance.y())) * (distance.y() > 0 ? 1 : -1) * elapsedTime;
+
+                velocity.x() *= 0.999;
+                velocity.y() *= 0.999;
+
+                if(velocity.x() < stopVel && fabs(coordinate.x()-home.x()) < 1) {
+                    velocity.x() = 0;
+                }
+                if(velocity.y() < stopVel && fabs(coordinate.y()-home.y()) < 1) {
+                    velocity.y() = 0;
+                }
+
+                coordinate.x() += velocity.x();
+                coordinate.y() += velocity.y();
+            }
         }
 
         Reflection();
@@ -106,11 +123,11 @@ public:
         gravitation = false;
     }
 
-//private:
-    void Deceleration() {
 
-    }
+    Point< float > coordinate;
+    Point< float > velocity;
 
+private:
     void Reflection() {
         if(coordinate.x() < 0 || coordinate.x() > xAreaSize) {
             velocity.x() = -velocity.x();
@@ -121,9 +138,9 @@ public:
         }
     }
 
-    Point< float > coordinate;
-    Point< float > velocity;
+
     Point< float > destination;
+    Point< float > home;
     bool gravitation;
 };
 
@@ -158,19 +175,24 @@ private:
 
 int main()
 {
+    rnd.setDistribution(TCOD_DISTRIBUTION_GAUSSIAN_RANGE);
+
     TCODConsole::initRoot(xAreaSize, yAreaSize, "Particles Gravity");
     ColorSchemeI *scheme = ColorSchemeFactory::getScheme("cold");
 
     TCOD_key_t key;
     TCOD_mouse_t mouse;
 
+    TCODMouse::showCursor(true);
+
     ParticleEnsemble pe(particleCount);
 
     while(!TCODConsole::isWindowClosed()) {
         TCODSystem::checkForEvent(TCOD_EVENT_ANY, &key, &mouse);
         if(mouse.lbutton) {
-            cout << mouse.cx << " " << mouse.cy << " : " << pe[0].coordinate.x() << " " << pe[0].coordinate.y() << endl;
             pe.SetDestinationPoint(Point<float>::MakePoint(mouse.cx, mouse.cy));
+        } else if(key.c == 'q') {
+            break;
         }
 
         pe.Update(TCODSystem::getLastFrameLength());
@@ -188,6 +210,7 @@ int main()
         }
 
         for(auto particle : pe) {
+            if(minVel == maxVel) { maxVel++; }
             color_t data(sqrt(pow(particle.velocity.x(),2) + pow(particle.velocity.y(),2)));
             scheme->writeColor(data, minVel, maxVel);
 
